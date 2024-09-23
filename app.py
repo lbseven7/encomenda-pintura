@@ -126,7 +126,7 @@ forma_pagamento = st.selectbox("Forma de pagamento", pagamento)
 
 # Botão para salvar o pedido
 if st.button("Salvar Pedido"):
-    if cliente and tema != "Escolha o tema" and moldura and tamanho != "Escolha o tamanho":
+    if cliente and tema != "Escolha o tema de sua preferência" and moldura and tamanho != "Escolha o tamanho":
         pedido = (
             cliente, tema, moldura, tamanho, tamanho_personalizado, 
             data_pedido, tempo_entrega, data_entrega, 
