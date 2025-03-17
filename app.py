@@ -1,228 +1,305 @@
 import streamlit as st
-from datetime import date, timedelta
-import sqlite3
-import pandas as pd
-from fpdf import FPDF
+from datetime import datetime
+from database import create_connection
+from PIL import Image
+import io
+import time
+from sqlite3 import Error  # Add this import
 
-# Função para criar conexão com o banco de dados
-def create_connection():
-    conn = sqlite3.connect('encomendas.db', check_same_thread=False)
-    return conn
+st.set_page_config(page_title="Art Auction", layout="wide")
 
-# Função para criar a tabela de pedidos, se não existir
-def create_table(conn):
-    cursor = conn.cursor()
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS pedidos (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        cliente TEXT,
-        tema TEXT,
-        moldura TEXT,
-        tamanho TEXT,
-        tamanho_personalizado TEXT,
-        data_pedido DATE,
-        tempo_entrega INTEGER,
-        data_entrega DATE,
-        condicoes_pagamento TEXT,
-        forma_pagamento TEXT
-    )
-    ''')
-    conn.commit()
+def init_session_state():
+    if 'user_id' not in st.session_state:
+        st.session_state.user_id = None
+    if 'username' not in st.session_state:
+        st.session_state.username = None
 
-# Função para salvar um pedido no banco de dados
-def insert_pedido(conn, pedido):
-    cursor = conn.cursor()
-    cursor.execute('''
-    INSERT INTO pedidos (
-        cliente, tema, moldura, tamanho, tamanho_personalizado, 
-        data_pedido, tempo_entrega, data_entrega, 
-        condicoes_pagamento, forma_pagamento
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ''', pedido)
-    conn.commit()
-
-# Função para buscar todos os pedidos
-def fetch_pedidos(conn):
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM pedidos")
-    return cursor.fetchall()
-
-# Função para deletar um pedido
-def delete_pedido(conn, pedido_id):
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM pedidos WHERE id = ?", (pedido_id,))
-    conn.commit()
-
-# Função para atualizar um pedido
-def update_pedido(conn, pedido):
-    cursor = conn.cursor()
-    cursor.execute('''
-    UPDATE pedidos
-    SET cliente = ?, tema = ?, moldura = ?, tamanho = ?, tamanho_personalizado = ?, 
-        data_pedido = ?, tempo_entrega = ?, data_entrega = ?, 
-        condicoes_pagamento = ?, forma_pagamento = ?
-    WHERE id = ?
-    ''', pedido)
-    conn.commit()
-
-# Função para gerar o relatório em PDF
-def gerar_relatorio_pdf(pedidos):
-    pdf = FPDF()
-    pdf.set_auto_page_break(auto=True, margin=15)
-    pdf.add_page()
+def main():
+    init_session_state()
     
-    pdf.set_font("Arial", "B", 16)
-    pdf.cell(200, 10, "Relatório de Pedidos", ln=True, align="C")
+    # Add login status in the sidebar
+    with st.sidebar:
+        if st.session_state.username:
+            st.success(f"Logged in as: {st.session_state.username}")
+            if st.button("Logout"):
+                st.session_state.user_id = None
+                st.session_state.username = None
+                st.rerun()
     
-    pdf.set_font("Arial", "B", 12)
-    pdf.ln(10)  # Espaçamento
+    st.title("Art Auction Gallery")
     
-    for pedido in pedidos:
-        pdf.set_font("Arial", size=10)
-        pdf.cell(200, 10, f"ID: {pedido[0]} | Cliente: {pedido[1]} | Tema: {pedido[2]} | Moldura: {pedido[3]}", ln=True)
-        pdf.cell(200, 10, f"Tamanho: {pedido[4]} | Data Pedido: {pedido[6]} | Entrega: {pedido[8]} | Pagamento: {pedido[10]}", ln=True)
-        pdf.ln(5)  # Pequeno espaçamento entre pedidos
-
-    pdf_file = "relatorio_pedidos.pdf"
-    pdf.output(pdf_file)
-    return pdf_file
-
-# Conectando ao banco de dados
-conn = create_connection()
-create_table(conn)
-
-# Título da aplicação
-st.title("Gerenciamento de Encomendas LBarbosa")
-
-# Input do nome do cliente
-cliente = st.text_input("Nome do Cliente")
-
-# Dropdown para o tema da pintura
-temas = ["Escolha o tema", "Animais", "Paisagem", "Figurativo", "Abstrato", "Retrato", "Marinha", "Natureza Morta"]
-tema = st.selectbox("Tema da Pintura", temas)
-
-# Dropdown para a moldura
-moldura = ["Sem Moldura", "Com Moldura"]
-moldura = st.selectbox("Moldura", moldura)
-
-# Dropdown para o tamanho da tela
-tamanho = ["Escolha o tamanho", "50cm x 70cm", "60cm x 80cm", "70cm x 90cm", "80cm x 100cm", "100cm x 150cm"]
-tamanho = st.selectbox("Tamanho da Tela em (cm)", tamanho)
-tamanho_personalizado = st.text_input("Tamanho personalizado em (cm)")
-
-# Data atual do pedido
-data_pedido = date.today()
-st.write(f"Data do Pedido: {data_pedido}")
-
-# Input para o tempo de entrega em dias
-tempo_entrega = st.number_input("Tempo de Entrega (dias)", min_value=15, max_value=365, value=15)
-data_entrega = data_pedido + timedelta(days=tempo_entrega)
-st.write(f"Data Prevista de Entrega: {data_entrega}")
-
-# Input para condições de pagamento
-condicoes_pagamento = st.text_area("Condições de Pagamento (Opcional)")
-pagamento = ["Dinheiro", "Cartão", "Pix", "Transferência", "Cheque", "Promissória"]
-forma_pagamento = st.selectbox("Forma de pagamento", pagamento)
-
-# Botão para salvar o pedido
-if st.button("Salvar Pedido"):
-    if cliente and tema != "Escolha o tema de sua preferência" and moldura and tamanho != "Escolha o tamanho":
-        pedido = (
-            cliente, tema, moldura, tamanho, tamanho_personalizado, 
-            data_pedido, tempo_entrega, data_entrega, 
-            condicoes_pagamento, forma_pagamento
-        )
-        insert_pedido(conn, pedido)
-        st.success(f"Pedido salvo com sucesso! Entrega prevista para {data_entrega}.")
-    else:
-        st.error("Por favor, preencha todos os campos obrigatórios.")
-
-# Seção para exibir os registros salvos
-st.subheader("Pedidos Salvos")
-
-# Exibir os pedidos salvos
-if st.button("Mostrar Pedidos"):
-    pedidos = fetch_pedidos(conn)
+    menu = ["Home", "Auctions"]
+    if not st.session_state.user_id:
+        menu.extend(["Login", "Register"])
     
-    if pedidos:
-        df = pd.DataFrame(pedidos, columns=["ID", "Cliente", "Tema", "Moldura", "Tamanho", "Tamanho Personalizado", "Data Pedido", "Tempo Entrega", "Data Entrega", "Condições de Pagamento", "Forma de Pagamento"])
-        st.dataframe(df)
-    else:
-        st.write("Nenhum pedido encontrado.")
-
-# Seção para apagar um pedido
-st.subheader("Apagar um Pedido")
-
-# Carregar todos os IDs dos pedidos para o dropdown
-pedido_ids = [pedido[0] for pedido in fetch_pedidos(conn)]
-
-if pedido_ids:
-    pedido_id = st.selectbox("Selecione o ID do Pedido para Apagar", pedido_ids)
+    choice = st.sidebar.selectbox("Menu", menu)
     
-    if st.button("Apagar Pedido"):
-        delete_pedido(conn, pedido_id)
-        st.success(f"Pedido com ID {pedido_id} apagado com sucesso.")
-else:
-    st.write("Nenhum pedido disponível para apagar.")
+    if choice == "Home":
+        show_home()
+    elif choice == "Auctions":
+        show_auctions()
+    elif choice == "Login":
+        show_login()
+    elif choice == "Register":
+        show_register()
 
-# Seção de Relatório
-st.subheader("Gerar Relatório")
+def show_home():
+    st.header("Welcome to Art Auction")
+    st.write("Discover unique paintings and participate in live auctions!")
 
-if st.button("Gerar Relatório em PDF"):
-    pedidos = fetch_pedidos(conn)
+def show_login():
+    st.header("Login")
+    username = st.text_input("Username")
+    password = st.text_input("Password", type="password")
     
-    if pedidos:
-        pdf_file = gerar_relatorio_pdf(pedidos)
-        st.success("Relatório gerado com sucesso!")
-        with open(pdf_file, "rb") as pdf:
-            st.download_button(
-                label="Baixar Relatório em PDF",
-                data=pdf,
-                file_name=pdf_file,
-                mime="application/pdf"
-            )
-    else:
-        st.write("Nenhum pedido encontrado para gerar o relatório.")
+    if st.button("Login"):
+        conn = create_connection()
+        if conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM users WHERE username = ? AND password = ?", 
+                         (username, password))
+            user = cursor.fetchone()
+            
+            if user:
+                st.session_state.user_id = user[0]  # ID is first column
+                st.session_state.username = user[1]  # Username is second column
+                st.success("Logged in successfully!")
+                st.balloons()
+                time.sleep(1)
+                st.rerun()
+            else:
+                st.error("Invalid credentials")
+            conn.close()
 
-# Seção para editar um pedido
-st.subheader("Editar um Pedido")
+def show_register():
+    st.header("Register")
+    username = st.text_input("Username")
+    password = st.text_input("Password", type="password")
+    whatsapp = st.text_input("WhatsApp Number")
+    
+    if st.button("Register"):
+        conn = create_connection()
+        if conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute("INSERT INTO users (username, password, whatsapp) VALUES (?, ?, ?)",
+                             (username, password, whatsapp))
+                conn.commit()
+                st.success("Registration successful! Please login.")
+                time.sleep(1)
+                st.rerun()
+            except Error as e:
+                st.error(f"Error: {e}")
+            conn.close()
 
-if pedido_ids:
-    pedido_id = st.selectbox("Selecione o ID do Pedido para Editar", pedido_ids)
-
-    # Carregar os dados do pedido selecionado
-    pedido = next((p for p in fetch_pedidos(conn) if p[0] == pedido_id), None)
-
-    if pedido:
-        # Preencher os campos com os dados atuais
-        cliente = st.text_input("Nome do Cliente", value=pedido[1], key=f"edit_cliente_{pedido_id}")
+def show_auctions():
+    st.header("Leilões Ativos")
+    
+    if st.session_state.user_id:
+        show_add_auction_form()  # Exibe o formulário diretamente
+            
+    conn = create_connection()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM auctions WHERE end_time > datetime('now')")
+        auctions = cursor.fetchall()
         
-        tema_index = temas.index(pedido[2]) if pedido[2] in temas else 0
-        tema = st.selectbox("Tema da Pintura", temas, index=tema_index, key=f"edit_tema_{pedido_id}")
+        for auction in auctions:
+            col1, col2 = st.columns([1, 2])
+            with col1:
+                if auction[3]:
+                    try:
+                        image = Image.open(io.BytesIO(auction[3]))
+                        st.image(image, caption=auction[1])
+                    except Exception:
+                        st.image("placeholder.png", caption=auction[1])
+            with col2:
+                st.subheader(auction[1])
+                st.write(auction[2])
+                st.write(f"Lance atual: R${auction[7]:.2f}")
+                
+                if st.session_state.user_id:
+                    bid_amount = st.number_input(
+                        "Seu lance",
+                        min_value=float(auction[7] + 1),
+                        key=f"bid_{auction[0]}"
+                    )
+                    if st.button("Fazer Lance", key=f"button_{auction[0]}"):
+                        place_bid(auction[0], bid_amount)
+                else:
+                    st.warning("Faça login para dar lances")
+        conn.close()
 
-        moldura_index = ["Sem Moldura", "Com Moldura"].index(pedido[3]) if pedido[3] in ["Sem Moldura", "Com Moldura"] else 0
-        moldura = st.selectbox("Moldura", ["Sem Moldura", "Com Moldura"], index=moldura_index, key=f"edit_moldura_{pedido_id}")
 
-        tamanho_index = tamanho.index(pedido[4]) if pedido[4] in tamanho else 0
-        tamanho = st.selectbox("Tamanho da Tela em (cm)", tamanho, index=tamanho_index, key=f"edit_tamanho_{pedido_id}")
-
-        tamanho_personalizado = st.text_input("Tamanho personalizado em (cm)", value=pedido[5], key=f"edit_tamanho_personalizado_{pedido_id}")
-
-        tempo_entrega = st.number_input("Tempo de Entrega (dias)", min_value=15, max_value=365, value=pedido[7], key=f"edit_tempo_entrega_{pedido_id}")
-        data_entrega = data_pedido + timedelta(days=tempo_entrega)
-        st.write(f"Data Prevista de Entrega: {data_entrega}")
-
-        condicoes_pagamento = st.text_area("Condições de Pagamento (Opcional)", value=pedido[9], key=f"edit_condicoes_pagamento_{pedido_id}")
+def show_add_auction_form():
+    st.subheader("Adicionar Novo Leilão")
+    with st.form(key='auction_form'):
+        col1, col2 = st.columns(2)
         
-        forma_pagamento_index = pagamento.index(pedido[10]) if pedido[10] in pagamento else 0
-        forma_pagamento = st.selectbox("Forma de pagamento", pagamento, index=forma_pagamento_index, key=f"edit_forma_pagamento_{pedido_id}")
+        with col1:
+            title = st.text_input("Título*")
+            description = st.text_area("Descrição*", height=50)
+            image = st.file_uploader("Upload da Imagem da Obra*", type=['png', 'jpg', 'jpeg'])
+        
+        with col2:
+            start_date = st.date_input("Data de Início*")
+            end_date = st.date_input("Data de Término*")
+            starting_bid = st.number_input("Lance Inicial (R$)*", min_value=100.0, step=50.0)
+        
+        st.markdown("---")
+        col3, col4 = st.columns(2)
+        
+        with col3:
+            dimensions = st.text_input("Dimensões da Obra* (ex: 60x80cm)")
+            technique = st.text_input("Técnica*")
+        
+        with col4:
+            year = st.number_input("Ano*", min_value=1900, max_value=2100, value=2024)
+        
+        st.markdown("*Campos obrigatórios")
+        submit_button = st.form_submit_button(label='Criar Leilão')
+    
+    if submit_button:
+        # Validate all required fields
+        if not title:
+            st.error("Por favor, insira um título.")
+            return
+        if not description:
+            st.error("Por favor, insira uma descrição.")
+            return
+        if not image:
+            st.error("Por favor, faça upload de uma imagem.")
+            return
+        if not dimensions:
+            st.error("Por favor, insira as dimensões da obra.")
+            return
+        if not technique:
+            st.error("Por favor, insira a técnica utilizada.")
+            return
+        if end_date <= start_date:
+            st.error("A data de término deve ser posterior à data de início.")
+            return
+    
+        try:
+            # Process and optimize image
+            img = Image.open(image)
+            img = img.convert('RGB')
+            img_byte_arr = io.BytesIO()
+            img.save(img_byte_arr, format='JPEG', quality=85, optimize=True)
+            img_byte_arr = img_byte_arr.getvalue()
+            
+            conn = create_connection()
+            if conn:
+                cursor = conn.cursor()
+                try:
+                    print(f"Debug - Inserindo leilão: {title}")
+                    cursor.execute("""
+                        INSERT INTO auctions (
+                            title, description, image, start_time, end_time,
+                            starting_bid, current_bid, artwork_dimensions,
+                            artwork_technique, artwork_year
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        title, description, img_byte_arr,
+                        start_date.strftime('%Y-%m-%d 00:00:00'),
+                        end_date.strftime('%Y-%m-%d 23:59:59'),
+                        starting_bid, starting_bid, dimensions,
+                        technique, year
+                    ))
+                    conn.commit()
+                    print("Debug - Leilão inserido com sucesso")
+                    st.success("Leilão criado com sucesso!")
+                    time.sleep(1)
+                    st.rerun()
+                except Error as e:
+                    print(f"Debug - Erro no banco de dados: {e}")
+                    st.error(f"Erro ao criar leilão: {e}")
+                finally:
+                    conn.close()
+        except Exception as e:
+            print(f"Debug - Erro ao processar imagem: {e}")
+            st.error(f"Erro ao processar a imagem: {e}")
 
-        # Botão para atualizar o pedido
-        if st.button("Atualizar Pedido", key=f"atualizar_{pedido_id}"):
-            updated_pedido = (
-                cliente, tema, moldura, tamanho, tamanho_personalizado, 
-                data_pedido, tempo_entrega, data_entrega, 
-                condicoes_pagamento, forma_pagamento, pedido_id
-            )
-            update_pedido(conn, updated_pedido)
-            st.success(f"Pedido com ID {pedido_id} atualizado com sucesso.")
+def place_bid(auction_id, amount):
+    conn = create_connection()
+    if conn:
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                INSERT INTO bids (auction_id, user_id, amount, bid_time)
+                VALUES (?, ?, ?, datetime('now'))
+            """, (auction_id, st.session_state.user_id, amount))
+            
+            cursor.execute("UPDATE auctions SET current_bid = ? WHERE id = ?",
+                         (amount, auction_id))
+            conn.commit()
+            st.success("Bid placed successfully!")
+        except Error as e:
+            st.error(f"Error placing bid: {e}")
+        conn.close()
+
+def show_auctions():
+    st.header("Leilões Ativos")
+    
+    if st.session_state.user_id:
+        show_add_auction_form()  # Exibe o formulário diretamente
+            
+    conn = create_connection()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM auctions WHERE end_time > datetime('now')")
+        auctions = cursor.fetchall()
+        
+        for auction in auctions:
+            col1, col2 = st.columns([1, 2])
+            with col1:
+                if auction[3]:
+                    try:
+                        image = Image.open(io.BytesIO(auction[3]))
+                        st.image(image, caption=auction[1])
+                    except Exception:
+                        st.image("placeholder.png", caption=auction[1])
+            with col2:
+                st.subheader(auction[1])
+                st.write(auction[2])
+                st.write(f"Lance atual: R${auction[7]:.2f}")
+                
+                if st.session_state.user_id:
+                    bid_amount = st.number_input(
+                        "Seu lance",
+                        min_value=float(auction[7] + 1),
+                        key=f"bid_{auction[0]}"
+                    )
+                    if st.button("Fazer Lance", key=f"button_{auction[0]}"):
+                        place_bid(auction[0], bid_amount)
+                else:
+                    st.warning("Faça login para dar lances")
+            
+            # Recupera e exibe os lances para este leilão
+            cursor.execute("""
+                SELECT u.username, b.amount, b.bid_time
+                FROM bids b
+                JOIN users u ON b.user_id = u.id
+                WHERE b.auction_id = ?
+                ORDER BY b.bid_time DESC
+            """, (auction[0],))
+            bids = cursor.fetchall()
+            
+            if bids:
+                st.write("### Lances Realizados")
+                bid_data = {
+                    "Usuário": [bid[0] for bid in bids],
+                    "Valor do Lance (R$)": [f"{bid[1]:.2f}" for bid in bids],
+                    "Data e Hora": [bid[2] for bid in bids]
+                }
+                st.table(bid_data)
+            else:
+                st.write("Nenhum lance realizado ainda.")
+            
+            st.markdown("---")
+        
+        conn.close()
+
+
+if __name__ == "__main__":
+    main()

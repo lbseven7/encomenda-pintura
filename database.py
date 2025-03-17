@@ -1,57 +1,60 @@
-# database.py
-
 import sqlite3
+from sqlite3 import Error
+import streamlit as st
 
-# Função para conectar ao banco de dados
-def conectar():
-    conn = sqlite3.connect('encomendas.db')
-    return conn, conn.cursor()
+def create_connection():
+    try:
+        conn = sqlite3.connect('auction_database.db')
+        create_tables(conn)
+        return conn
+    except Error as e:
+        print(f"Error: {e}")
+        st.error(f"Error: {e}")
+        return None
 
-# Função para criar a tabela de pedidos (caso não exista)
-def criar_tabela():
-    conn, cursor = conectar()
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS pedidos (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        cliente TEXT,
-        tema TEXT,
-        moldura TEXT,
-        tamanho TEXT,
-        tamanho_personalizado TEXT,
-        data_pedido DATE,
-        tempo_entrega INTEGER,
-        data_entrega DATE,
-        condicoes_pagamento TEXT,
-        forma_pagamento TEXT
-    )
-    ''')
-    conn.commit()
-    conn.close()
+def create_tables(conn):
+    try:
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL UNIQUE,
+                password TEXT NOT NULL,
+                whatsapp TEXT NOT NULL
+            )
+        ''')
 
-# Função para listar pedidos
-def listar_pedidos():
-    conn, cursor = conectar()
-    cursor.execute("SELECT * FROM pedidos")
-    pedidos = cursor.fetchall()
-    conn.close()
-    return pedidos
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS auctions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                description TEXT,
+                image BLOB,
+                start_time TIMESTAMP NOT NULL,
+                end_time TIMESTAMP NOT NULL,
+                starting_bid REAL NOT NULL,
+                current_bid REAL NOT NULL,
+                is_featured BOOLEAN DEFAULT 0,
+                artwork_dimensions TEXT,
+                artwork_technique TEXT,
+                artwork_year INTEGER,
+                artwork_status TEXT DEFAULT 'active'
+            )
+        ''')
 
-# Função para editar um pedido
-def editar_pedido(id, cliente, tema, moldura, tamanho, tamanho_personalizado, data_pedido, tempo_entrega, data_entrega, condicoes_pagamento, forma_pagamento):
-    conn, cursor = conectar()
-    cursor.execute('''
-    UPDATE pedidos SET 
-    cliente = ?, tema = ?, moldura = ?, tamanho = ?, tamanho_personalizado = ?, 
-    data_pedido = ?, tempo_entrega = ?, data_entrega = ?, 
-    condicoes_pagamento = ?, forma_pagamento = ?
-    WHERE id = ?
-    ''', (cliente, tema, moldura, tamanho, tamanho_personalizado, data_pedido, tempo_entrega, data_entrega, condicoes_pagamento, forma_pagamento, id))
-    conn.commit()
-    conn.close()
-
-# Função para excluir um pedido
-def excluir_pedido(id):
-    conn, cursor = conectar()
-    cursor.execute('DELETE FROM pedidos WHERE id = ?', (id,))
-    conn.commit()
-    conn.close()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS bids (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                auction_id INTEGER,
+                user_id INTEGER,
+                amount REAL NOT NULL,
+                bid_time TIMESTAMP NOT NULL,
+                FOREIGN KEY (auction_id) REFERENCES auctions (id),
+                FOREIGN KEY (user_id) REFERENCES users (id)
+            )
+        ''')
+        
+        conn.commit()
+    except Error as e:
+        print(f"Error creating tables: {e}")
